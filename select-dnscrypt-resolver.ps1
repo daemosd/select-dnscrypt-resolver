@@ -129,6 +129,17 @@ Param(
 ,
 	[switch]
 	$runAsService
+,
+# TODO: See if there's a more consise way to validate a socket address here
+	[parameter()]
+	[ValidateScript({$_ -match [IPAddress]$_})]
+	[string]
+	$localIPAddress = "127.0.0.1"
+,
+	[parameter()]
+	[ValidateRange(1, 65535)]
+	[int]
+	$localPort = 53
 #	[switch]
 #	$setLocalhostDNSNetAdapters
 #,
@@ -196,18 +207,18 @@ if ($runAsService){
 # Command returns same output regardless if the service already exists or not
 # Here, no News is good news
 if ($runAsService) {
-	$output = Start-Process -FilePath $proxy_exe -ArgumentList "--uninstall" -NoNewWindow -Wait;
-	if ($output.ExitCode) {
+    try {
+	    $output = Start-Process -FilePath $proxy_exe -ArgumentList "--uninstall" -NoNewWindow -Wait;
+	} catch {
 		"[SCRIPT ERROR] Uninstall of Proxy Service Failed!" |
 			%{if ($LogToFile){ out-file -filepath $logfile -inputobject "$(Get-Date -Format o): $_" -append;} Write-ERROR $_ };
 		"[SCRIPT ERROR] Exiting with ExitCode 12" |
 			%{if ($LogToFile){ out-file -filepath $logfile -inputobject "$(Get-Date -Format o): $_" -append;} Write-Host $_ };
 		LogSeparator;
 		exit 12;
-	} else {
-	    "[SCRIPT INFO] Uninstalled previously existing dnscrypt-proxy service" | 
+	} 
+	"[SCRIPT INFO] Uninstalled previously existing dnscrypt-proxy service" | 
 			%{if ($LogToFile){ out-file -filepath $logfile -inputobject "$(Get-Date -Format o): $_" -append;} Write-Host $_ };
-	}
 } else {
     # Kill any running processes of dnscrypt_proxy if they are present (continue on otherwise)
 	try {
@@ -249,7 +260,7 @@ if (-not ($resolver_name)) {
 # If runAsService switch set, install the Proxy Service
 # Again, no news is good news
 if ($runAsService) {
-	$output = Start-Process -FilePath $proxy_exe -ArgumentList "-L $resolvers_csv_file -R $resolver_name --install" -NoNewWindow -PassThru -Wait;
+	$output = Start-Process -FilePath $proxy_exe -ArgumentList "--local-address=${localIPAddress}:$localPort -L $resolvers_csv_file -R $resolver_name --install" -NoNewWindow -PassThru -Wait;
 	if ($output.ExitCode) {
 		"[SCRIPT ERROR] Install of Proxy Service and Resolver Communication has failed." |
 			%{if ($LogToFile){ out-file -filepath $logfile -inputobject "$(Get-Date -Format o): $_" -append;} Write-ERROR $_ };
@@ -265,7 +276,7 @@ if ($runAsService) {
     # Similar to above, the only difference that we drop the --install argument and display a new window where we don't wait 
 	# Given that the dnscrypt-proxy by default runs in the foreground and blocks in order to listen, this keeps it from interfering with current PS session.
 	# TODO: See if this can be made better rather than waiting 3 seconds in order to determine if process is still running or not
-	$output = Start-Process -FilePath $proxy_exe -ArgumentList "-L $resolvers_csv_file -R $resolver_name" -PassThru;
+	$output = Start-Process -FilePath $proxy_exe -ArgumentList "--local-address=${localIPAddress}:$localPort -L $resolvers_csv_file -R $resolver_name" -PassThru;
 	Start-Sleep -s 3;
 	# If the process is still present, it started fine. Otherwise, it failed to startup properly - return an error
 	try {
@@ -283,7 +294,7 @@ if ($runAsService) {
 	} 
 }
 
-"[SCRIPT INFO] Now connected to DNSCrypt resolver: $resolver_name" |
+"[SCRIPT INFO] Now connected to DNSCrypt resolver: $resolver_name. Set your DNS Resolver to point at ${localIPAddress}:$localPort" |
 	%{if ($LogToFile){ out-file -filepath $logfile -inputobject "$(Get-Date -Format o): $_" -append;} Write-Host $_};
 LogSeparator;
 #DONE
